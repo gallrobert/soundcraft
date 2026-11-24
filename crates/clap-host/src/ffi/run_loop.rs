@@ -178,9 +178,17 @@ mod tests {
         // SAFETY: a valid one-byte buffer written to our own pipe.
         assert_eq!(unsafe { libc::write(fds[1], b"x".as_ptr().cast(), 1) }, 1);
         assert_eq!(rl.ready(), vec![(fds[0], CLAP_POSIX_FD_READ)]);
-        assert!(rl.modify_fd(fds[0], CLAP_POSIX_FD_WRITE));
-        assert!(rl.ready().is_empty(), "a read end never becomes writable");
+        // FreeBSD pipes may be bidirectional, so the first descriptor is not
+        // necessarily read-only. Test registration changes without assuming that.
+        assert!(rl.modify_fd(fds[0], 0));
+        assert!(rl.ready().is_empty(), "no readiness was requested");
+        assert!(rl.modify_fd(fds[0], CLAP_POSIX_FD_READ));
+        assert_eq!(rl.ready(), vec![(fds[0], CLAP_POSIX_FD_READ)]);
         assert!(rl.remove_fd(fds[0]) && !rl.has_fd(fds[0]));
+        assert!(rl.add_fd(fds[1], 0));
+        assert!(rl.modify_fd(fds[1], CLAP_POSIX_FD_WRITE));
+        assert_eq!(rl.ready(), vec![(fds[1], CLAP_POSIX_FD_WRITE)]);
+        assert!(rl.remove_fd(fds[1]));
         rl.clear();
         assert!(!rl.has_timer(b));
         // SAFETY: closing the pipe we opened.
